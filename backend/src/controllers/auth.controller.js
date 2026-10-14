@@ -136,3 +136,83 @@ export const checkAuth = (req,res)=>{
         res.status(500).json({ message: "Internal Server Error" })
     }
 }
+
+export const forgotPassword = async (req, res) => {
+    try {
+        const { email } = req.body;
+        if (!email) {
+            return res.status(400).json({ message: "Email is required" });
+        }
+
+        if (!validator.isEmail(email)) {
+            return res.status(400).json({ message: "Invalid email expression" });
+        }
+
+        const user = await User.findOne({ email });
+        if (!user) {
+            return res.status(404).json({ message: "No account found with this email address" });
+        }
+
+        // Generate 6-digit OTP
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+        user.resetPasswordOtp = otp;
+        user.resetPasswordOtpExpires = otpExpires;
+        await user.save();
+
+        console.log("=========================================");
+        console.log(`[PASSWORD RESET OTP for ${email}]: ${otp}`);
+        console.log("Expires in 10 minutes");
+        console.log("=========================================");
+
+        res.status(200).json({
+            message: "Verification code sent to your email",
+            email,
+            devOtp: otp // Included for local dev simulation
+        });
+    } catch (error) {
+        console.log("Error in forgotPassword controller", error.message);
+        res.status(500).json({ message: "Internal Server Error" });
+    }
+};
+
+export const resetPassword = async (req, res) => {
+    try {
+        const { email, otp, newPassword } = req.body;
+
+        if (!email || !otp || !newPassword) {
+            return res.status(400).json({ message: "All fields are required" });
+        }
+
+        if (newPassword.length < 6) {
+            return res.status(400).json({ message: "Password must be at least 6 characters" });
+        }
+
+        const user = await User.findOne({ email });
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+        if (!user.resetPasswordOtp || user.resetPasswordOtp !== otp.toString().trim()) {
+            return res.status(400).json({ message: "Invalid verification code" });
+        }
+
+        if (!user.resetPasswordOtpExpires || new Date() > new Date(user.resetPasswordOtpExpires)) {
+            return res.status(400).json({ message: "Verification code has expired. Please request a new one." });
+        }
+
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+        user.password = hashedPassword;
+        user.resetPasswordOtp = null;
+        user.resetPasswordOtpExpires = null;
+        await user.save();
+
+        res.status(200).json({ message: "Password updated successfully. You can now login." });
+    } catch (error) {
+        console.log("Error in resetPassword controller", error.message);
+        res.status(500).json({ message: "Internal Server Error" });
+    }
+};

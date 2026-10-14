@@ -12,6 +12,8 @@ export const useAuthStore = create((set,get) => ({
     isUpdatingProfile: false,
 
     isCheckingAuth: true,
+    isSendingOtp: false,
+    isResettingPassword: false,
     onlineUsers:[],
     socket:null,
 
@@ -77,9 +79,39 @@ export const useAuthStore = create((set,get) => ({
             toast.success("Profile updated successfully");
         } catch (error) {
             console.log("error in update profile:", error);
-            toast.error(error.response.data.message);
+            toast.error(error.response?.data?.message || "Failed to update profile");
         } finally {
             set({ isUpdatingProfile: false });
+        }
+    },
+
+    forgotPassword: async (email) => {
+        set({ isSendingOtp: true });
+        try {
+            const res = await axiosInstance.post("/auth/forgot-password", { email });
+            toast.success(res.data.message || "Verification code sent to your email");
+            return { success: true, devOtp: res.data.devOtp, email: res.data.email };
+        } catch (error) {
+            const message = error.response?.data?.message || "Failed to send verification code";
+            toast.error(message);
+            return { success: false, message };
+        } finally {
+            set({ isSendingOtp: false });
+        }
+    },
+
+    resetPassword: async ({ email, otp, newPassword }) => {
+        set({ isResettingPassword: true });
+        try {
+            const res = await axiosInstance.post("/auth/reset-password", { email, otp, newPassword });
+            toast.success(res.data.message || "Password updated successfully!");
+            return { success: true };
+        } catch (error) {
+            const message = error.response?.data?.message || "Failed to reset password";
+            toast.error(message);
+            return { success: false, message };
+        } finally {
+            set({ isResettingPassword: false });
         }
     },
 

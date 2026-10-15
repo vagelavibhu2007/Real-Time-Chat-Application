@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
 import { useChatStore } from "../store/useChatStore.js";
 import { useAuthStore } from "../store/useAuthStore.js";
 import { Image, Send, X, Reply } from "lucide-react";
@@ -12,6 +12,26 @@ const MessageInput = () => {
 
   const { sendMessage, replyingTo, setReplyingTo, selectedUser } = useChatStore();
   const { authUser } = useAuthStore();
+
+  const typingTimeoutRef = useRef(null);
+  const isTypingRef = useRef(false);
+
+  const emitStopTyping = useCallback(() => {
+    if (isTypingRef.current) {
+      isTypingRef.current = false;
+      const socket = useAuthStore.getState().socket;
+      if (socket && selectedUser) {
+        socket.emit("stopTyping", { receiverId: selectedUser._id });
+      }
+    }
+  }, [selectedUser]);
+
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      emitStopTyping();
+    };
+  }, [emitStopTyping]);
 
   useEffect(() => {
     if (replyingTo && textInputRef.current) {
@@ -38,9 +58,35 @@ const MessageInput = () => {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  const handleTextChange = (e) => {
+    const val = e.target.value;
+    setText(val);
+
+    const socket = useAuthStore.getState().socket;
+    if (!socket || !selectedUser) return;
+
+    if (val.trim().length > 0) {
+      if (!isTypingRef.current) {
+        isTypingRef.current = true;
+        socket.emit("typing", { receiverId: selectedUser._id });
+      }
+
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => {
+        emitStopTyping();
+      }, 2000);
+    } else {
+      emitStopTyping();
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    }
+  };
+
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!text.trim() && !imagePreview) return;
+
+    emitStopTyping();
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
 
     try {
       await sendMessage({
@@ -141,7 +187,7 @@ const MessageInput = () => {
             className="w-full input input-bordered rounded-lg input-sm sm:input-md"
             placeholder={replyingTo ? "Type your reply..." : "Type a message..."}
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={handleTextChange}
           />
           <input
             type="file"

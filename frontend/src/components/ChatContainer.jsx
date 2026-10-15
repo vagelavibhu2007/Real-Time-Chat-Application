@@ -21,12 +21,15 @@ export const ChatContainer = () => {
     setReplyingTo,
     toggleReaction,
     deleteMessage,
+    typingUsers,
   } = useChatStore();
 
   const { authUser } = useAuthStore();
   const messageEndRef = useRef(null);
   const [highlightedMessageId, setHighlightedMessageId] = useState(null);
   const [activeReactionMenuId, setActiveReactionMenuId] = useState(null);
+
+  const isTyping = typingUsers.includes(selectedUser?._id);
 
   useEffect(() => {
     getMessages(selectedUser._id);
@@ -39,6 +42,12 @@ export const ChatContainer = () => {
       messageEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages]);
+
+  useEffect(() => {
+    if (isTyping && messageEndRef.current) {
+      messageEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [isTyping]);
 
   const scrollToMessage = (targetId) => {
     if (!targetId) return;
@@ -318,6 +327,31 @@ export const ChatContainer = () => {
             </div>
           );
         })}
+
+        {/* WhatsApp-Style Animated Typing Indicator */}
+        {isTyping && (
+          <div className="chat chat-start transition-all duration-300">
+            <div className="chat-image avatar">
+              <div className="size-8 rounded-full border border-base-300">
+                <img
+                  src={selectedUser.profilePic || "/avatar.png"}
+                  alt={selectedUser.fullName}
+                />
+              </div>
+            </div>
+            <div className="chat-bubble bg-base-200 text-base-content py-2 px-3.5 rounded-2xl flex items-center gap-2 shadow-xs">
+              <span className="text-xs text-base-content/70 italic">
+                {selectedUser.fullName} is typing
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="size-1.5 rounded-full bg-primary animate-bounce [animation-delay:-0.3s]"></span>
+                <span className="size-1.5 rounded-full bg-primary animate-bounce [animation-delay:-0.15s]"></span>
+                <span className="size-1.5 rounded-full bg-primary animate-bounce"></span>
+              </span>
+            </div>
+          </div>
+        )}
+
         <div ref={messageEndRef} />
       </div>
 

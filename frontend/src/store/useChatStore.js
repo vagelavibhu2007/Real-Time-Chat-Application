@@ -8,6 +8,7 @@ export const useChatStore = create((set, get) => ({
   users: [],
   selectedUser: null,
   replyingTo: null,
+  typingUsers: [],
   isUsersLoading: false,
   isMessagesLoading: false,
 
@@ -94,6 +95,7 @@ export const useChatStore = create((set, get) => ({
 
       set({
         messages: [...get().messages, newMessage],
+        typingUsers: get().typingUsers.filter((id) => id !== newMessage.senderId),
       });
     });
 
@@ -110,6 +112,19 @@ export const useChatStore = create((set, get) => ({
         messages: get().messages.filter((m) => m._id !== deletedMessageId),
       });
     });
+
+    socket.on("userTyping", ({ senderId }) => {
+      const { typingUsers } = get();
+      if (!typingUsers.includes(senderId)) {
+        set({ typingUsers: [...typingUsers, senderId] });
+      }
+    });
+
+    socket.on("userStoppedTyping", ({ senderId }) => {
+      set({
+        typingUsers: get().typingUsers.filter((id) => id !== senderId),
+      });
+    });
   },
 
   unsubscribeFromMessages: () => {
@@ -118,6 +133,8 @@ export const useChatStore = create((set, get) => ({
     socket.off("newMessage");
     socket.off("messageReaction");
     socket.off("messageDeleted");
+    socket.off("userTyping");
+    socket.off("userStoppedTyping");
   },
 
   setSelectedUser: (selectedUser) => set({ selectedUser, replyingTo: null }),

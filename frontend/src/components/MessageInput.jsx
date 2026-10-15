@@ -1,13 +1,23 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { useChatStore } from "../store/useChatStore.js";
-import { Image, Send, X } from "lucide-react";
+import { useAuthStore } from "../store/useAuthStore.js";
+import { Image, Send, X, Reply } from "lucide-react";
 import toast from "react-hot-toast";
 
 const MessageInput = () => {
   const [text, setText] = useState("");
   const [imagePreview, setImagePreview] = useState(null);
   const fileInputRef = useRef(null);
-  const { sendMessage } = useChatStore();
+  const textInputRef = useRef(null);
+
+  const { sendMessage, replyingTo, setReplyingTo, selectedUser } = useChatStore();
+  const { authUser } = useAuthStore();
+
+  useEffect(() => {
+    if (replyingTo && textInputRef.current) {
+      textInputRef.current.focus();
+    }
+  }, [replyingTo]);
 
   const handleImageChange = (e) => {
     const file = e.target.files[0];
@@ -47,8 +57,61 @@ const MessageInput = () => {
     }
   };
 
+  const handleKeyDown = (e) => {
+    if (e.key === "Escape" && replyingTo) {
+      setReplyingTo(null);
+    }
+  };
+
   return (
     <div className="p-4 w-full">
+      {/* Reply Preview Card */}
+      {replyingTo && (
+        <div className="mb-2 p-2.5 px-3 bg-base-200 border-l-4 border-primary rounded-lg flex items-center justify-between gap-3 text-xs shadow-xs transition-all">
+          <div className="flex items-center gap-2.5 overflow-hidden">
+            <Reply className="size-4 text-primary shrink-0" />
+            <div className="overflow-hidden">
+              <p className="font-semibold text-primary">
+                Replying to{" "}
+                {replyingTo.senderId?._id === authUser?._id || replyingTo.senderId === authUser?._id
+                  ? "yourself"
+                  : replyingTo.senderId?.fullName || selectedUser?.fullName || "User"}
+              </p>
+              <div className="flex items-center gap-1.5 text-base-content/70 truncate mt-0.5">
+                {replyingTo.image && (
+                  <span className="flex items-center gap-1 shrink-0 font-medium text-base-content/80">
+                    <Image className="size-3" /> Photo
+                  </span>
+                )}
+                {replyingTo.image && replyingTo.text && <span>·</span>}
+                {replyingTo.text && (
+                  <span className="truncate">{replyingTo.text}</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {replyingTo.image && (
+              <img
+                src={replyingTo.image}
+                alt="Reply preview thumbnail"
+                className="size-8 object-cover rounded border border-base-300"
+              />
+            )}
+            <button
+              onClick={() => setReplyingTo(null)}
+              className="btn btn-ghost btn-circle btn-xs text-base-content/60 hover:text-base-content"
+              type="button"
+              title="Cancel reply (Esc)"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Image Preview */}
       {imagePreview && (
         <div className="mb-3 flex items-center gap-2">
           <div className="relative">
@@ -73,8 +136,10 @@ const MessageInput = () => {
         <div className="flex-1 flex gap-2">
           <input
             type="text"
+            ref={textInputRef}
+            onKeyDown={handleKeyDown}
             className="w-full input input-bordered rounded-lg input-sm sm:input-md"
-            placeholder="Type a message..."
+            placeholder={replyingTo ? "Type your reply..." : "Type a message..."}
             value={text}
             onChange={(e) => setText(e.target.value)}
           />

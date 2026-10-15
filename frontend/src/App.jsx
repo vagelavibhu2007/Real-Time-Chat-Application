@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import Navbar from './components/Navbar.jsx'
 import { Routes, Route, Navigate } from 'react-router'
 import HomePage from './pages/HomePage.jsx'
@@ -14,7 +14,7 @@ import { useThemeStore } from './store/useThemeStore.js'
 
 function App() {
 
-    const { authUser, checkAuth, isCheckingAuth ,onlineUsers} = useAuthStore()
+    const { authUser, checkAuth, isCheckingAuth } = useAuthStore()
     const {theme} = useThemeStore()
 
     useEffect(() => {

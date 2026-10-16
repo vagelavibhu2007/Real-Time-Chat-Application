@@ -12,7 +12,52 @@ export const getUsersForSideBar = async (req, res) => {
 
         const filteredUsers = await User.find({ _id: { $ne: loggedInUserId } }).select("-password -__v")
 
-        res.status(200).json(filteredUsers)
+        const unreadAgg = await Message.aggregate([
+            { $match: { receiverId: loggedInUserId, isRead: false } },
+            { $group: { _id: "$senderId", count: { $sum: 1 } } }
+        ])
+        const unreadMap = {}
+        unreadAgg.forEach(item => {
+            unreadMap[item._id.toString()] = item.count
+        })
+
+        const now = new Date()
+        const muteMap = {}
+        const userDoc = await User.findById(loggedInUserId).select("mutedConversations")
+        const activeMutes = []
+        let hasExpiredMutes = false
+
+        for (const m of (userDoc?.mutedConversations || [])) {
+            const isStillMuted = !m.mutedUntil || new Date(m.mutedUntil) > now
+            if (isStillMuted) {
+                activeMutes.push(m)
+                muteMap[m.userId.toString()] = {
+                    isMuted: true,
+                    mutedUntil: m.mutedUntil
+                }
+            } else {
+                hasExpiredMutes = true
+            }
+        }
+
+        // Clean up expired mutes from user document if any expired
+        if (hasExpiredMutes && userDoc) {
+            userDoc.mutedConversations = activeMutes
+            await userDoc.save()
+        }
+
+        const usersWithMetadata = filteredUsers.map(user => {
+            const uObj = user.toObject()
+            const muteInfo = muteMap[uObj._id.toString()]
+            return {
+                ...uObj,
+                unreadCount: unreadMap[uObj._id.toString()] || 0,
+                isMuted: !!muteInfo,
+                mutedUntil: muteInfo?.mutedUntil || null
+            }
+        })
+
+        res.status(200).json(usersWithMetadata)
 
     } catch (error) {
         console.log("Error in getUsersForSideBar controller", error.message)
@@ -138,10 +183,8 @@ export const sendMessage = async (req, res) => {
             }
         ])
 
-        const receiverSocketId = getReceiverSocketId(receiverId)
-        if (receiverSocketId) {
-            io.to(receiverSocketId).emit('newMessage', newMessage)
-        }
+        const strReceiverId = receiverId.toString()
+        io.to(strReceiverId).emit('newMessage', newMessage)
 
         res.status(201).json(newMessage)
 
@@ -211,13 +254,10 @@ export const toggleReaction = async (req, res) => {
             ? message.receiverId.toString()
             : message.senderId.toString()
 
-        const receiverSocketId = getReceiverSocketId(otherUserId)
-        if (receiverSocketId) {
-            io.to(receiverSocketId).emit('messageReaction', {
-                messageId: message._id,
-                reactions: message.reactions
-            })
-        }
+        io.to(otherUserId.toString()).emit('messageReaction', {
+            messageId: message._id,
+            reactions: message.reactions
+        })
 
         res.status(200).json({
             messageId: message._id,
@@ -252,15 +292,133 @@ export const deleteMessage = async (req, res) => {
         await Message.findByIdAndDelete(messageId)
 
         // Notify receiver via Socket.IO
-        const receiverSocketId = getReceiverSocketId(message.receiverId.toString())
-        if (receiverSocketId) {
-            io.to(receiverSocketId).emit('messageDeleted', messageId)
-        }
+        io.to(message.receiverId.toString()).emit('messageDeleted', messageId)
 
         res.status(200).json({ message: "Message deleted successfully", messageId })
 
     } catch (error) {
         console.log("Error in deleteMessage controller", error.message)
+        res.status(500).json({ message: "Internal Server Error" })
+    }
+}
+
+export const getUnreadCounts = async (req, res) => {
+    try {
+        const loggedInUserId = req.user._id
+
+        const unreadAgg = await Message.aggregate([
+            { $match: { receiverId: loggedInUserId, isRead: false } },
+            { $group: { _id: "$senderId", count: { $sum: 1 } } }
+        ])
+
+        const unreadCounts = {}
+        let totalUnread = 0
+        unreadAgg.forEach(item => {
+            unreadCounts[item._id.toString()] = item.count
+            totalUnread += item.count
+        })
+
+        res.status(200).json({ unreadCounts, totalUnread })
+
+    } catch (error) {
+        console.log("Error in getUnreadCounts controller", error.message)
+        res.status(500).json({ message: "Internal Server Error" })
+    }
+}
+
+export const markMessagesAsRead = async (req, res) => {
+    try {
+        const myId = req.user._id
+        const userToChatId = req.params.id
+
+        if (!mongoose.Types.ObjectId.isValid(userToChatId)) {
+            return res.status(400).json({ message: "Invalid user ID format" })
+        }
+
+        const result = await Message.updateMany(
+            { senderId: userToChatId, receiverId: myId, isRead: false },
+            { $set: { isRead: true, readAt: new Date() } }
+        )
+
+        io.to(userToChatId.toString()).emit("messagesRead", { readerId: myId })
+
+        res.status(200).json({
+            success: true,
+            userToChatId,
+            modifiedCount: result.modifiedCount
+        })
+
+    } catch (error) {
+        console.log("Error in markMessagesAsRead controller", error.message)
+        res.status(500).json({ message: "Internal Server Error" })
+    }
+}
+
+export const muteConversation = async (req, res) => {
+    try {
+        const myId = req.user._id
+        const targetUserId = req.params.id
+        const { duration } = req.body
+
+        const VALID_DURATIONS = ['1h', '8h', '24h', 'indefinite', 'unmute']
+        if (!duration || !VALID_DURATIONS.includes(duration)) {
+            return res.status(400).json({
+                message: `Invalid duration. Allowed values are: ${VALID_DURATIONS.join(', ')}`
+            })
+        }
+
+        if (!mongoose.Types.ObjectId.isValid(targetUserId)) {
+            return res.status(400).json({ message: "Invalid user ID format" })
+        }
+
+        const targetUser = await User.findById(targetUserId)
+        if (!targetUser) {
+            return res.status(404).json({ message: "User not found" })
+        }
+
+        const user = await User.findById(myId)
+        if (!user.mutedConversations) {
+            user.mutedConversations = []
+        }
+
+        // Remove existing mute for this user
+        user.mutedConversations = user.mutedConversations.filter(
+            m => m.userId.toString() !== targetUserId.toString()
+        )
+
+        let mutedUntil = null
+        let isMuted = false
+
+        if (duration !== 'unmute') {
+            const now = Date.now()
+            if (duration === '1h') {
+                mutedUntil = new Date(now + 60 * 60 * 1000)
+            } else if (duration === '8h') {
+                mutedUntil = new Date(now + 8 * 60 * 60 * 1000)
+            } else if (duration === '24h') {
+                mutedUntil = new Date(now + 24 * 60 * 60 * 1000)
+            } else if (duration === 'indefinite') {
+                mutedUntil = null
+            }
+
+            user.mutedConversations.push({
+                userId: targetUserId,
+                mutedUntil
+            })
+            isMuted = true
+        }
+
+        await user.save()
+
+        res.status(200).json({
+            success: true,
+            targetUserId,
+            isMuted,
+            mutedUntil
+        })
+
+    } catch (error) {
+        console.log("Error in muteConversation controller", error.message)
         res.status(500).json({ message: "Internal Server Error" })
     }
 }

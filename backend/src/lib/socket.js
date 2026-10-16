@@ -7,47 +7,65 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: ["http://localhost:5173"],
+    origin: ["http://localhost:5173", "http://127.0.0.1:5173"],
+    credentials: true,
   },
 });
 
+// Map of userId -> Set of socketIds for multi-tab and reconnect support
+const userSocketMap = {}; // { [userId: string]: Set<string> }
+
 export function getReceiverSocketId(userId) {
-  return userSocketMap[userId];
+  if (!userId) return null;
+  const strUserId = userId.toString();
+  if (userSocketMap[strUserId] && userSocketMap[strUserId].size > 0) {
+    return strUserId; // Emitting to this user room reaches all active sockets for this user
+  }
+  return null;
 }
 
-// used to store online users
-const userSocketMap = {}; // {userId: socketId}
+export function isUserOnline(userId) {
+  if (!userId) return false;
+  const strUserId = userId.toString();
+  return !!(userSocketMap[strUserId] && userSocketMap[strUserId].size > 0);
+}
 
 io.on("connection", (socket) => {
-  console.log("A user connected", socket.id);
+  const rawUserId = socket.handshake.query.userId;
+  const userId = rawUserId ? rawUserId.toString() : null;
 
-  const userId = socket.handshake.query.userId;
-  if (userId) userSocketMap[userId] = socket.id;
+  if (userId) {
+    // Ensure socket joins the user-specific room
+    socket.join(userId);
 
-  // io.emit() is used to send events to all the connected clients
+    if (!userSocketMap[userId]) {
+      userSocketMap[userId] = new Set();
+    }
+    userSocketMap[userId].add(socket.id);
+  }
+
+  // io.emit() sends online users list to all connected clients
   io.emit("getOnlineUsers", Object.keys(userSocketMap));
 
   socket.on("typing", ({ receiverId }) => {
     if (!receiverId) return;
-    const receiverSocketId = getReceiverSocketId(receiverId);
-    if (receiverSocketId) {
-      io.to(receiverSocketId).emit("userTyping", { senderId: userId });
-    }
+    io.to(receiverId.toString()).emit("userTyping", { senderId: userId });
   });
 
   socket.on("stopTyping", ({ receiverId }) => {
     if (!receiverId) return;
-    const receiverSocketId = getReceiverSocketId(receiverId);
-    if (receiverSocketId) {
-      io.to(receiverSocketId).emit("userStoppedTyping", { senderId: userId });
-    }
+    io.to(receiverId.toString()).emit("userStoppedTyping", { senderId: userId });
   });
 
   socket.on("disconnect", () => {
-    console.log("A user disconnected", socket.id);
-    delete userSocketMap[userId];
+    if (userId && userSocketMap[userId]) {
+      userSocketMap[userId].delete(socket.id);
+      if (userSocketMap[userId].size === 0) {
+        delete userSocketMap[userId];
+        io.emit("userStoppedTyping", { senderId: userId });
+      }
+    }
     io.emit("getOnlineUsers", Object.keys(userSocketMap));
-    io.emit("userStoppedTyping", { senderId: userId });
   });
 });
 

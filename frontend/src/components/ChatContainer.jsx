@@ -17,7 +17,7 @@ export const ChatContainer = () => {
     selectedUser,
     isMessagesLoading,
     subscribeToMessages,
-    unsubscribeFromMessages,
+    markAsRead,
     setReplyingTo,
     toggleReaction,
     deleteMessage,
@@ -32,10 +32,26 @@ export const ChatContainer = () => {
   const isTyping = typingUsers.includes(selectedUser?._id);
 
   useEffect(() => {
-    getMessages(selectedUser._id);
+    if (selectedUser?._id) {
+      getMessages(selectedUser._id);
+      markAsRead(selectedUser._id);
+    }
     subscribeToMessages();
-    return () => unsubscribeFromMessages();
-  }, [selectedUser._id, getMessages, subscribeToMessages, unsubscribeFromMessages]);
+  }, [selectedUser?._id, getMessages, markAsRead, subscribeToMessages]);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      if (document.visibilityState === "visible" && selectedUser?._id) {
+        markAsRead(selectedUser._id);
+      }
+    };
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleFocus);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleFocus);
+    };
+  }, [selectedUser?._id, markAsRead]);
 
   useEffect(() => {
     if (messageEndRef.current && messages) {

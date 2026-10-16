@@ -8,18 +8,26 @@ import SettingsPage from './pages/SettingsPage.jsx'
 import ProfilePage from './pages/ProfilePage.jsx'
 import ForgotPasswordPage from './pages/ForgotPasswordPage.jsx'
 import { useAuthStore } from './store/useAuthStore.js'
+import { useChatStore } from './store/useChatStore.js'
 import { Loader } from 'lucide-react'
 import { Toaster } from "react-hot-toast";
 import { useThemeStore } from './store/useThemeStore.js'
 
 function App() {
 
-    const { authUser, checkAuth, isCheckingAuth } = useAuthStore()
+    const { authUser, checkAuth, isCheckingAuth, socket } = useAuthStore()
+    const { subscribeToMessages } = useChatStore()
     const {theme} = useThemeStore()
 
     useEffect(() => {
         checkAuth()
     }, [checkAuth])
+
+    useEffect(() => {
+        if (authUser && socket) {
+            subscribeToMessages()
+        }
+    }, [authUser, socket, subscribeToMessages])
 
 
     //loading animation

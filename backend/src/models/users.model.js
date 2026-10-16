@@ -26,7 +26,20 @@ const userSchema = new Schema({
     resetPasswordOtpExpires: {
         type: Date,
         default: null
-    }
+    },
+    mutedConversations: [
+        {
+            userId: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: 'user',
+                required: true
+            },
+            mutedUntil: {
+                type: Date,
+                default: null
+            }
+        }
+    ]
 },{timestamps:true})
 
 

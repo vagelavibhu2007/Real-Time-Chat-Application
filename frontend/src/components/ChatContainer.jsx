@@ -179,9 +179,9 @@ export const ChatContainer = () => {
               </div>
 
               {/* Message Bubble Container with Action Bar */}
-              <div className="relative inline-block max-w-[85%] sm:max-w-[75%]">
+              <div className="relative w-fit max-w-[85%] sm:max-w-[75%] min-w-0">
                 <div
-                  className={`chat-bubble flex flex-col break-words ${
+                  className={`chat-bubble flex flex-col break-words max-w-full min-w-0 ${
                     isMyMessage
                       ? "bg-primary text-primary-content"
                       : "bg-base-200 text-base-content"
@@ -243,7 +243,11 @@ export const ChatContainer = () => {
                   )}
 
                   {/* Message Text */}
-                  {message.text && <p className="whitespace-pre-wrap">{message.text}</p>}
+                  {message.text && (
+                    <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                      {message.text}
+                    </p>
+                  )}
                 </div>
 
                 {/* Floating Actions Bar (Reactions + Reply + Delete) */}

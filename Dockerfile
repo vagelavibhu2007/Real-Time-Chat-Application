@@ -1,5 +1,5 @@
-# Use Node.js 18 Alpine for smaller image
-FROM node:18-alpine
+# Use Node.js 22 (Active LTS) for compatibility with Vite 8, React Router 7, and Tailwind CSS v4
+FROM node:22-bookworm-slim
 
 # Set working directory
 WORKDIR /app
@@ -9,8 +9,8 @@ COPY package*.json ./
 COPY backend/package*.json ./backend/
 COPY frontend/package*.json ./frontend/
 
-# Install dependencies
-RUN npm install --prefix backend && npm install --prefix frontend
+# Install dependencies (ensure frontend devDependencies are included for Vite build)
+RUN npm install --prefix backend && npm install --prefix frontend --include=dev
 
 # Copy source code
 COPY . .

@@ -21,6 +21,51 @@ export const getUsersForSideBar = async (req, res) => {
             unreadMap[item._id.toString()] = item.count
         })
 
+        // Aggregate latest message activity for each conversation with loggedInUserId
+        const lastMessageAgg = await Message.aggregate([
+            {
+                $match: {
+                    $or: [
+                        { senderId: loggedInUserId },
+                        { receiverId: loggedInUserId }
+                    ]
+                }
+            },
+            {
+                $project: {
+                    createdAt: 1,
+                    text: 1,
+                    image: 1,
+                    otherUserId: {
+                        $cond: [
+                            { $eq: ["$senderId", loggedInUserId] },
+                            "$receiverId",
+                            "$senderId"
+                        ]
+                    }
+                }
+            },
+            {
+                $sort: { createdAt: -1 }
+            },
+            {
+                $group: {
+                    _id: "$otherUserId",
+                    lastMessageAt: { $first: "$createdAt" },
+                    lastMessageText: { $first: "$text" },
+                    lastMessageImage: { $first: "$image" }
+                }
+            }
+        ])
+
+        const lastActivityMap = {}
+        lastMessageAgg.forEach(item => {
+            lastActivityMap[item._id.toString()] = {
+                lastMessageAt: item.lastMessageAt,
+                lastMessageText: item.lastMessageText || (item.lastMessageImage ? "📷 Photo" : "")
+            }
+        })
+
         const now = new Date()
         const muteMap = {}
         const userDoc = await User.findById(loggedInUserId).select("mutedConversations")
@@ -48,13 +93,30 @@ export const getUsersForSideBar = async (req, res) => {
 
         const usersWithMetadata = filteredUsers.map(user => {
             const uObj = user.toObject()
-            const muteInfo = muteMap[uObj._id.toString()]
+            const strId = uObj._id.toString()
+            const muteInfo = muteMap[strId]
+            const activity = lastActivityMap[strId]
             return {
                 ...uObj,
-                unreadCount: unreadMap[uObj._id.toString()] || 0,
+                unreadCount: unreadMap[strId] || 0,
                 isMuted: !!muteInfo,
-                mutedUntil: muteInfo?.mutedUntil || null
+                mutedUntil: muteInfo?.mutedUntil || null,
+                lastMessageAt: activity?.lastMessageAt || null,
+                lastMessageText: activity?.lastMessageText || null
             }
+        })
+
+        // Sort descending: newest conversation activity first; contacts without messages below
+        usersWithMetadata.sort((a, b) => {
+            const timeA = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0
+            const timeB = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0
+
+            if (timeA && timeB) {
+                if (timeB !== timeA) return timeB - timeA
+            }
+            if (timeA && !timeB) return -1
+            if (!timeA && timeB) return 1
+            return (a.fullName || "").localeCompare(b.fullName || "")
         })
 
         res.status(200).json(usersWithMetadata)

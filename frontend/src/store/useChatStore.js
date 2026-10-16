@@ -6,6 +6,21 @@ import { showInAppNotification } from "../components/InAppNotification.jsx";
 
 const processedMessageIds = new Set();
 
+export const sortUsersByActivity = (usersList) => {
+  if (!Array.isArray(usersList)) return [];
+  return [...usersList].sort((a, b) => {
+    const timeA = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+    const timeB = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+
+    if (timeA && timeB) {
+      if (timeB !== timeA) return timeB - timeA;
+    }
+    if (timeA && !timeB) return -1;
+    if (!timeA && timeB) return 1;
+    return (a.fullName || "").localeCompare(b.fullName || "");
+  });
+};
+
 export const useChatStore = create((set, get) => ({
   messages: [],
   users: [],
@@ -26,7 +41,7 @@ export const useChatStore = create((set, get) => ({
     set({ isUsersLoading: true });
     try {
       const res = await axiosInstance.get("/messages/users");
-      const users = res.data;
+      const users = sortUsersByActivity(res.data);
 
       const unreadMap = {};
       const muteMap = {};
@@ -195,7 +210,7 @@ export const useChatStore = create((set, get) => ({
   },
 
   sendMessage: async (messageData) => {
-    const { selectedUser, messages, replyingTo } = get();
+    const { selectedUser, messages, replyingTo, users } = get();
     try {
       const payload = {
         ...messageData,
@@ -205,9 +220,23 @@ export const useChatStore = create((set, get) => ({
         `/messages/send/${selectedUser._id}`,
         payload
       );
+
+      const targetUserIdStr = String(selectedUser._id);
+      const updatedUsers = users.map((u) => {
+        if (String(u._id) === targetUserIdStr) {
+          return {
+            ...u,
+            lastMessageAt: res.data.createdAt,
+            lastMessageText: res.data.text || (res.data.image ? "📷 Photo" : ""),
+          };
+        }
+        return u;
+      });
+
       set({
         messages: [...messages, res.data],
         replyingTo: null,
+        users: sortUsersByActivity(updatedUsers),
       });
     } catch (error) {
       toast.error(error.response?.data?.message || "Failed to send message");
@@ -270,6 +299,27 @@ export const useChatStore = create((set, get) => ({
       if (processedMessageIds.size > 200) {
         const first = processedMessageIds.values().next().value;
         processedMessageIds.delete(first);
+      }
+
+      // Update sender's latest activity timestamp and re-sort conversations immediately
+      let senderFound = false;
+      const currentUsers = get().users;
+      const updatedUsers = currentUsers.map((u) => {
+        if (String(u._id) === senderIdStr) {
+          senderFound = true;
+          return {
+            ...u,
+            lastMessageAt: newMessage.createdAt,
+            lastMessageText: newMessage.text || (newMessage.image ? "📷 Photo" : ""),
+          };
+        }
+        return u;
+      });
+
+      if (senderFound) {
+        set({ users: sortUsersByActivity(updatedUsers) });
+      } else {
+        await get().getUsers();
       }
 
       const { selectedUser, messages, isConversationMuted } = get();

@@ -3,6 +3,7 @@ import { useChatStore } from "../store/useChatStore.js";
 import { useAuthStore } from "../store/useAuthStore.js";
 import SidebarSkeleton from "./skeletons/SidebarSkeleton.jsx";
 import { Users, BellOff } from "lucide-react";
+import { formatMessageTime } from "../lib/utils.js";
 
 const Sidebar = () => {
   const {
@@ -123,6 +124,11 @@ const Sidebar = () => {
                     {user.fullName}
                   </span>
                   <div className="flex items-center gap-1.5 shrink-0">
+                    {user.lastMessageAt && (
+                      <span className="text-[10px] text-zinc-500 font-normal">
+                        {formatMessageTime(user.lastMessageAt)}
+                      </span>
+                    )}
                     {isMuted && (
                       <BellOff
                         className="size-3.5 text-zinc-400"
@@ -141,6 +147,10 @@ const Sidebar = () => {
                   {isUserTyping ? (
                     <span className="text-primary font-medium italic animate-pulse">
                       typing...
+                    </span>
+                  ) : user.lastMessageText ? (
+                    <span className="text-zinc-400 truncate block opacity-90">
+                      {user.lastMessageText}
                     </span>
                   ) : (
                     <span

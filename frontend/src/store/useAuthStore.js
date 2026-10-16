@@ -39,7 +39,7 @@ export const useAuthStore = create((set,get) => ({
             toast.success("Account created successfully");
             get().connectSocket();
         } catch (error) {
-            toast.error(error.response.data.message);
+            toast.error(error.response?.data?.message || "Failed to create account. Please try again.");
         } finally {
             set({ isSigningUp: false });
         }
@@ -52,7 +52,7 @@ export const useAuthStore = create((set,get) => ({
             toast.success("Logged out successfully");
             get().disconnectSocket();
         } catch (error) {
-            toast.error(error.response.data.message);
+            toast.error(error.response?.data?.message || "Failed to log out");
         }
     },
 
@@ -65,7 +65,7 @@ export const useAuthStore = create((set,get) => ({
 
             get().connectSocket();
         } catch (error) {
-            toast.error(error.response.data.message);
+            toast.error(error.response?.data?.message || "Failed to log in. Please try again.");
         } finally {
             set({ isLoggingIn: false });
         }

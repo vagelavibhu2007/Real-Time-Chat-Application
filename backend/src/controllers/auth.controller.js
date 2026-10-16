@@ -3,6 +3,8 @@ import User from "../models/users.model.js"
 import bcrypt from "bcryptjs"
 import validator from "validator"
 import cloudinary from "../lib/cloudinary.js"
+import { connectDB, isDbConnected, sanitizeError } from "../lib/db.js"
+import mongoose from "mongoose"
 
 export const signup = async (req, res) => {
     const { fullName, email, password } = req.body
@@ -17,6 +19,25 @@ export const signup = async (req, res) => {
         //by me
         if (!validator.isEmail(email)) {
             return res.status(400).json({ message: "Invalid email expression" })
+        }
+
+        // Check database connection before executing Mongoose queries
+        if (!isDbConnected()) {
+            const connected = await connectDB();
+            if (!connected) {
+                console.error(`[Signup Error] Database not ready (state: ${mongoose.connection.readyState})`);
+                return res.status(503).json({
+                    message: "Database service unavailable. Please verify your MongoDB configuration in Render."
+                });
+            }
+        }
+
+        // Validate JWT_SECRET before proceeding
+        if (!process.env.JWT_SECRET) {
+            console.error("[Signup Error] JWT_SECRET is not configured in environment variables");
+            return res.status(500).json({
+                message: "Server authentication configuration error. JWT_SECRET is not configured."
+            });
         }
 
         const user = await User.findOne({ email })
@@ -51,7 +72,7 @@ export const signup = async (req, res) => {
         }
 
     } catch (error) {
-        console.log("Error in Signup controller", error.message)
+        console.error("[Signup Controller Error]:", error.name || "Error", sanitizeError(error));
         res.status(500).json({ message: "Internal Server Error" })
     }
 }
@@ -69,6 +90,25 @@ export const login = async (req, res) => {
         //by me
         if (!validator.isEmail(email)) {
             return res.status(400).json({ message: "Invalid email expression" })
+        }
+
+        // Check database connection before executing Mongoose queries
+        if (!isDbConnected()) {
+            const connected = await connectDB();
+            if (!connected) {
+                console.error(`[Login Error] Database not ready (state: ${mongoose.connection.readyState})`);
+                return res.status(503).json({
+                    message: "Database service unavailable. Please verify your MongoDB configuration in Render."
+                });
+            }
+        }
+
+        // Validate JWT_SECRET before proceeding
+        if (!process.env.JWT_SECRET) {
+            console.error("[Login Error] JWT_SECRET is not configured in environment variables");
+            return res.status(500).json({
+                message: "Server authentication configuration error. JWT_SECRET is not configured."
+            });
         }
 
         const user = await User.findOne({ email })
@@ -94,7 +134,7 @@ export const login = async (req, res) => {
 
 
     } catch (error) {
-        console.log("Error in Login controller", error.message)
+        console.error("[Login Controller Error]:", error.name || "Error", sanitizeError(error));
         res.status(500).json({ message: "Internal Server Error" })
     }
 }
@@ -148,6 +188,16 @@ export const forgotPassword = async (req, res) => {
             return res.status(400).json({ message: "Invalid email expression" });
         }
 
+        // Check database connection
+        if (!isDbConnected()) {
+            const connected = await connectDB();
+            if (!connected) {
+                return res.status(503).json({
+                    message: "Database service unavailable. Please verify your MongoDB configuration in Render."
+                });
+            }
+        }
+
         const user = await User.findOne({ email });
         if (!user) {
             return res.status(404).json({ message: "No account found with this email address" });
@@ -172,7 +222,7 @@ export const forgotPassword = async (req, res) => {
             devOtp: otp // Included for local dev simulation
         });
     } catch (error) {
-        console.log("Error in forgotPassword controller", error.message);
+        console.error("[ForgotPassword Controller Error]:", error.name || "Error", sanitizeError(error));
         res.status(500).json({ message: "Internal Server Error" });
     }
 };
@@ -187,6 +237,16 @@ export const resetPassword = async (req, res) => {
 
         if (newPassword.length < 6) {
             return res.status(400).json({ message: "Password must be at least 6 characters" });
+        }
+
+        // Check database connection
+        if (!isDbConnected()) {
+            const connected = await connectDB();
+            if (!connected) {
+                return res.status(503).json({
+                    message: "Database service unavailable. Please verify your MongoDB configuration in Render."
+                });
+            }
         }
 
         const user = await User.findOne({ email });
@@ -212,7 +272,7 @@ export const resetPassword = async (req, res) => {
 
         res.status(200).json({ message: "Password updated successfully. You can now login." });
     } catch (error) {
-        console.log("Error in resetPassword controller", error.message);
+        console.error("[ResetPassword Controller Error]:", error.name || "Error", sanitizeError(error));
         res.status(500).json({ message: "Internal Server Error" });
     }
 };
